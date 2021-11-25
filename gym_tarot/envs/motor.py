@@ -18,8 +18,9 @@ class Motor:
         # We need to define the integrator for our mechanical method
         self.integrator = forwardEulerIntegrator(initCond, 1, sampleTime)
         # We start with an angularSpeed and torque of 0.
-        self.angularSpeed = 0
+        self.angularSpeed = 365
         self.torque = 0
+        self.setBroken = False
 
     def electrical(self, voltage):
         # Calculate current from voltage and angular speed
@@ -42,9 +43,14 @@ class Motor:
         return rpm
 
     def getAngularSpeed(self, voltage):
+        if self.setBroken:
+            return 0
         eTorque, current = self.electrical(voltage)
         rpm = self.mechanical(eTorque)
         return rpm
 
     def setRes(self, res):
         self.equivResistance = res
+
+    def broken(self):
+        self.setBroken = True

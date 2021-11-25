@@ -12,6 +12,7 @@ class Airframe:
         self.angSmall = TarotParams["minAng"]
         self.angLarge = TarotParams["maxAng"]
         self.state = np.zeros(12, dtype = np.float32)
+        self.state[2] = 5
         self.ode = scipy.integrate.ode(self.state_dot)
         self.Ixx = TarotParams["Ixx"]
         self.Iyy = TarotParams["Iyy"]

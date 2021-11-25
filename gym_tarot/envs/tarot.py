@@ -17,8 +17,8 @@ class TarotBaseEnv(gym.Env):
         super(TarotBaseEnv, self).__init__()
         self.path = "../../gym_tarot/envs/"
         # Set spaces
-        self.observation_space = spaces.Box(np.full(12, -np.inf, dtype="float32"), np.full(12, np.inf, dtype="float32"), dtype="float32")
-        self.action_space = spaces.Box(np.full(8, 0, dtype="float32"), np.full(8, 1, dtype="float32"))
+        self.observation_space = spaces.Box(np.full(24, -np.inf, dtype="float32"), np.full(24, np.inf, dtype="float32"), dtype="float32")
+        self.action_space = spaces.Box(np.full(4, -10, dtype="float32"), np.full(4, 10, dtype="float32"))
 
         # Create model
         # Initialize parameters
@@ -53,22 +53,23 @@ class TarotBaseEnv(gym.Env):
 
     def step(self, action):
         # update trajectories
-        if self.stepCount % 100 == 0:
-            self.xref = self.xrefarr[self.stepCount/100]
-            self.yref = self.yrefarr[self.stepCount/100]
-            self.zref = 0
+        error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1])+ (self.zref-self.state[2]) * (self.zref-self.state[2]))
+        if error < 0.5:
+            self.xref = self.xrefarr[self.stepCount]
+            self.yref = self.yrefarr[self.stepCount]
+            self.zref = 5
+            self.stepCount += 1
         self.curTime += self.sampleTime
-        self.stepCount += 1
 
         fz = self.altitudeController.output(self.state, self.zref)
         thetaRef, phiRef = self.positionController.output(self.state, [self.xref, self.yref])
         roll, pitch, yaw = self.attitudeController.output(self.state, [phiRef, thetaRef, self.psiRef]) 
-        uDesired = [fz, roll, pitch, yaw]
+        # 1.1 / 1 and .9 is to -1
+        uDesired = [fz+action[0], roll+action[1], pitch+action[2], yaw+action[3]]
         refVoltage = self.allocator.getRefVoltage(uDesired)
-        voltage = refVoltage + action
         rpm = np.zeros(8, dtype=np.float32)
         for idx, motor in enumerate(self.motorArray):
-            rpm[idx] = motor.getAngularSpeed(voltage[idx])
+            rpm[idx] = motor.getAngularSpeed(refVoltage[idx])
         self.state = self.tarot.update(rpm)
         # Add noise
         if self.stepCount % 100 == 0:
@@ -79,15 +80,14 @@ class TarotBaseEnv(gym.Env):
         matrix = self.tarot.getRotMatrix()
         err = self.state[0:3] - np.array([self.xref, self.yref, self.zref])
         obsFullDim = np.concatenate([self.state, matrix, err])
-        voltageArr = np.zeros(8)
-        obsSpace = np.concatenate([self.ae.encode(torch.from_numpy(obsFullDim).float()).detach().numpy(), voltageArr])
-
-        # Get reward
-        reward = self.reward()
+        #voltageArr = np.zeros(8)
+        #obsSpace = np.concatenate([self.ae.encode(torch.from_numpy(obsFullDim).float()).detach().numpy(), voltageArr])
 
         # Check terminate condition
         finish = self.terminate()
-        return obsSpace, reward, finish, {"traj": self.traj, "xref": self.xref, "yref": self.yref, "x": self.state[0], "y": self.state[1]}
+        error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1]) + (self.zref-self.state[2]) * (self.zref-self.state[2]))
+        reward = (-error+3)/3
+        return obsFullDim, reward, finish, {"traj": self.traj, "xref": self.xref, "yref": self.yref, "x": self.state[0], "y": self.state[1]}
 
     def reset(self):
         # Recreate Model
@@ -96,8 +96,10 @@ class TarotBaseEnv(gym.Env):
         self.sampleTime = 0.01
         self.motorArray = []
         for i in range(8):
+            icMotor = 0
             m = Motor(MotorParams, icMotor, self.sampleTime)
             self.motorArray.append(m)
+        self.motorArray[3].setRes(0.29)
 
         # Initialize Airframe
         TarotParams = {"g": 9.80, "m": 10.66, "l": 0.6350, "b": 9.8419e-05, "d": 1.8503e-06, "minAng": math.cos(math.pi/8), "maxAng": math.cos(3*math.pi/8), "Ixx": 0.2506, "Iyy": 0.2506, "Izz": 0.4538, "maxSpeed": 670, "voltageSat": 0.0325}
@@ -116,6 +118,7 @@ class TarotBaseEnv(gym.Env):
 
         # Setup trajectory and finish condition 
         self.traj = np.random.randint(0, 3)
+        self.traj = 0
         if self.traj == 0:
             self.xrefarr = pd.read_csv(self.path+"xref8traj.csv", header=None).iloc[:, 1]
             self.yrefarr = pd.read_csv(self.path+"yref8traj.csv", header=None).iloc[:, 1]
@@ -129,7 +132,7 @@ class TarotBaseEnv(gym.Env):
         self.curTime = 0
         self.xref = self.xrefarr[self.curTime]
         self.yref = self.yrefarr[self.curTime]
-        self.zref = 0
+        self.zref = 5
         self.stepCount = 0
 
         self.state = self.tarot.getState()
@@ -138,13 +141,10 @@ class TarotBaseEnv(gym.Env):
         err = self.state[0:3] - np.array([self.xref, self.yref, self.zref])
         obsFullDim = np.concatenate([self.state, matrix, err])
         voltageArr = np.zeros(8)
-        obsSpace = np.concatenate([self.ae.encode(torch.from_numpy(obsFullDim).float()).detach().numpy(), voltageArr])
+        #obsSpace = np.concatenate([self.ae.encode(torch.from_numpy(obsFullDim).float()).detach().numpy(), voltageArr])
+        obsSpace = obsFullDim
         return obsSpace
-
-    def reward(self):
-        error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1])+ (self.zref-self.state[2]) * (self.zref-self.state[2]))
-        return (-error+10)/10
 
     def terminate(self):
         error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1]) + (self.zref-self.state[2]) * (self.zref-self.state[2]))
-        return np.isclose(self.endTime, self.curTime, 1e-9) or error > 10
+        return self.stepCount == len(self.xrefarr)-1  or error > 3 or np.isclose(self.curTime, self.endTime*1.5, 1e-9)
