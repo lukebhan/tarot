@@ -15,7 +15,7 @@ env=gym.make('Tarot-v0')
 policy_kwargs = dict(net_arch=dict(pi=[256, 256], qf=[256, 256]))
 model = SAC("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1)
 #model.learn(5000000)
-model.load('model_no_fault')
+model.load('tmp/best_model')
 obs = env.reset()
 term = False
 xarr = []

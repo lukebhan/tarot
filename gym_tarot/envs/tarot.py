@@ -54,11 +54,13 @@ class TarotBaseEnv(gym.Env):
     def step(self, action):
         # update trajectories
         error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1])+ (self.zref-self.state[2]) * (self.zref-self.state[2]))
+        reward = 0
         if error < 0.5:
             self.xref = self.xrefarr[self.stepCount]
             self.yref = self.yrefarr[self.stepCount]
             self.zref = 5
             self.stepCount += 1
+            reward += 10
         self.curTime += self.sampleTime
 
         fz = self.altitudeController.output(self.state, self.zref)
@@ -86,7 +88,7 @@ class TarotBaseEnv(gym.Env):
         # Check terminate condition
         finish = self.terminate()
         error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1]) + (self.zref-self.state[2]) * (self.zref-self.state[2]))
-        reward = (-error+3)/3
+        reward += (-error+3)/3
         return obsFullDim, reward, finish, {"traj": self.traj, "xref": self.xref, "yref": self.yref, "x": self.state[0], "y": self.state[1]}
 
     def reset(self):
@@ -147,4 +149,4 @@ class TarotBaseEnv(gym.Env):
 
     def terminate(self):
         error = math.sqrt((self.xref-self.state[0])*(self.xref-self.state[0]) + (self.yref-self.state[1]) * (self.yref-self.state[1]) + (self.zref-self.state[2]) * (self.zref-self.state[2]))
-        return self.stepCount == len(self.xrefarr)-1  or error > 3 or np.isclose(self.curTime, self.endTime*1.5, 1e-9)
+        return self.stepCount == len(self.xrefarr)-1  or error > 3 or np.isclose(self.curTime, self.stepCount*2, 1e-6)
